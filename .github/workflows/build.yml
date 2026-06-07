@@ -1,7 +1,7 @@
 name: Build HAProxy for R66S
 
 on:
-  workflow_dispatch: # 允许你手动点击按钮触发编译
+  workflow_dispatch:
 
 jobs:
   build:
@@ -16,10 +16,10 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev python3-distutils rsync unzip zlib1g-dev file wget
 
-    - name: Download OpenWrt SDK
+    - name: Download OpenWrt SDK (Tsinghua Mirror)
       run: |
-        # 下载适合 aarch64_cortex-a53 的官方稳定版 SDK 镜像（兼容你的内核环境）
-        wget https://downloads.openwrt.org/releases/23.05.3/targets/rockchip/armv8/openwrt-sdk-23.05.3-rockchip-armv8_gcc-12.3.0_musl.Linux-x86_64.tar.xz
+        # 换用清华大学开源镜像站，速度极快且极度稳定，防止 Exit Code 100 报错
+        wget https://mirrors.tuna.tsinghua.edu.cn/openwrt/releases/23.05.3/targets/rockchip/armv8/openwrt-sdk-23.05.3-rockchip-armv8_gcc-12.3.0_musl.Linux-x86_64.tar.xz
         tar -xJf openwrt-sdk-*.tar.xz
         mv openwrt-sdk-* openwrt-sdk
 
@@ -29,21 +29,24 @@ jobs:
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: Replace HAProxy Makefile
+    - name: Replace HAProxy Makefile & Files
       run: |
-        # 用你在第一步上传的最新 3.2.15 Makefile，覆盖掉 SDK 默认的旧版本
+        # 清理旧包目录
         rm -rf openwrt-sdk/package/feeds/packages/net/haproxy
         mkdir -p openwrt-sdk/package/feeds/packages/net/haproxy
+        
+        # 1. 复制你仓库里的最新 3.2.15 Makefile
         cp ../path/haproxy/Makefile openwrt-sdk/package/feeds/packages/net/haproxy/Makefile
-        # 顺便把官方仓库依赖的配套辅助文件拉下来（用于生成启动脚本和管理界面文件）
-        svn export https://github.com/openwrt/packages/trunk/net/haproxy/files openwrt-sdk/package/feeds/packages/net/haproxy/files --force || \
-        git clone --depth=1 https://github.com/openwrt/packages.git /tmp/packages && cp -r /tmp/packages/net/haproxy/files openwrt-sdk/package/feeds/packages/net/haproxy/files
+        
+        # 2. 极其稳妥地抓取官方配套的 files 文件夹
+        git clone --depth=1 https://github.com/openwrt/packages.git /tmp/packages
+        cp -r /tmp/packages/net/haproxy/files openwrt-sdk/package/feeds/packages/net/haproxy/files
 
     - name: Compile HAProxy
       run: |
         cd openwrt-sdk
-        # 选择编译带有 SSL 支持的完整版
         make defconfig
+        # 仅编译 haproxy 核心包，提高成功率
         make package/feeds/packages/net/haproxy/compile V=s
 
     - name: Upload IPK Artifacts
